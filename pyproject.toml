@@ -1,0 +1,55 @@
+[build-system]
+requires = ["setuptools>=69", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "hungerlib"
+version = "0.0.0"
+description = "Python client for HungerBridge"
+readme = "README.md"
+requires-python = ">=3.9"
+license = { text = "MIT" }
+
+authors = [
+    { name = "iFamished" }
+]
+
+keywords = [
+    "minecraft",
+    "automation",
+    "rcon",
+    "server-management",
+    "hungernet"
+]
+
+dependencies = [
+    "requests",
+]
+
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Topic :: Software Development :: Libraries",
+    "Topic :: System :: Systems Administration",
+]
+
+[project.urls]
+Homepage = "https://github.com/iFamished/HungerLib"
+Documentation = "https://github.com/iFamished/HungerLib"
+Source = "https://github.com/iFamished/HungerLib"
+Issues = "https://github.com/iFamished/HungerLib/issues"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools]
+include-package-data = true
+
+[tool.setuptools.package-data]
+"hungerlib.email" = ["email_templates/*.html"]
