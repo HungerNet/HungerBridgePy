@@ -160,7 +160,7 @@ def test_log_reaches_sse_stream(client):
 
 
 def test_custom_log_level(client):
-    assert client.log('custom level from hungerbridgepy', level='BRIDGE')['ok'] is True
+    assert client.log('custom level from hungerbridgepy', level='BRIDGE', thread='TEST')['ok'] is True
 
 
 # -- negative paths -----------------------------------------------------------------------
