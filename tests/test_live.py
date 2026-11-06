@@ -40,7 +40,7 @@ if not (_PICKUP or (_URL and _TOKEN)):
 @pytest.fixture(scope="module")
 def client() -> BridgeClient:
     if _PICKUP:
-        c = BridgeClient.fromPickup(_PICKUP, max_retries=5, retry_backoff_sec=0.5)
+        c = BridgeClient.fromPickup(_PICKUP, max_retries=5, retry_backoff_sec=0.5, static_delay=0.11)
         # make the redeemed token available to later processes / debugging
         os.environ["HB_URL"], os.environ["HB_TOKEN"] = c.base, f"{c._token_id}:{c._token_secret}"
         return c
