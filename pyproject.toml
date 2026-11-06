@@ -3,53 +3,50 @@ requires = ["setuptools>=69", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "hungerlib"
-version = "0.0.0"
-description = "Python client for HungerBridge"
+# NOTE: the distribution used to be named "hungerlib", which is a different,
+# already-published PyPI project (HungerLib). The import package has always
+# been `hungerbridge`, so the distribution now uses the same name.
+name = "hungerbridge"
+version = "0.0.0"  # injected from version.yaml by .github/workflows/release.yml
+description = "Python client for the HungerBridge Minecraft (Paper/Folia/Fabric) HTTP bridge"
 readme = "README.md"
 requires-python = ">=3.9"
 license = { text = "MIT" }
-
-authors = [
-    { name = "iFamished" }
-]
-
-keywords = [
-    "minecraft",
-    "automation",
-    "rcon",
-    "server-management",
-    "hungernet"
-]
-
-dependencies = [
-    "requests",
-]
-
+authors = [{ name = "iFamished" }]
+keywords = ["minecraft", "paper", "folia", "fabric", "automation", "server-management", "hungernet"]
+dependencies = ["requests>=2.28"]
 classifiers = [
     "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.9",
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
     "License :: OSI Approved :: MIT License",
     "Operating System :: OS Independent",
     "Development Status :: 4 - Beta",
     "Intended Audience :: Developers",
     "Topic :: Software Development :: Libraries",
     "Topic :: System :: Systems Administration",
+    "Typing :: Typed",
 ]
 
+[project.optional-dependencies]
+test = ["pytest>=7"]
+
 [project.urls]
-Homepage = "https://github.com/iFamished/HungerLib"
-Documentation = "https://github.com/iFamished/HungerLib"
-Source = "https://github.com/iFamished/HungerLib"
-Issues = "https://github.com/iFamished/HungerLib/issues"
+Homepage = "https://github.com/HungerNet/HungerBridgePy"
+Source = "https://github.com/HungerNet/HungerBridgePy"
+Issues = "https://github.com/HungerNet/HungerBridgePy/issues"
+"Server plugin" = "https://github.com/HungerNet/HungerBridge"
 
 [tool.setuptools.packages.find]
 where = ["src"]
 
-[tool.setuptools]
-include-package-data = true
-
 [tool.setuptools.package-data]
-"hungerlib.email" = ["email_templates/*.html"]
+hungerbridge = ["py.typed"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = ["live: requires a running HungerBridge server (HB_URL + HB_TOKEN or HB_PICKUP_URL)"]

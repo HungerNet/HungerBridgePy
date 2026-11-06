@@ -1,5 +1,7 @@
 run: true
-version: '1.0-dev.1'
+version: '1.0-dev.2'
 description: |
   Dev 1:
   - Initial release
+  Dev 2:
+  - Restructure
