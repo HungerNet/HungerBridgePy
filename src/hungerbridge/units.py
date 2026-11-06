@@ -38,7 +38,7 @@ def _factor(table: dict, unit: str) -> float:
     try:
         return float(table[unit.lower()])
     except (KeyError, AttributeError):
-        raise ValueError(f'Unknown unit: {unit!r} (expected one of {', '.join(table)})') from None
+        raise ValueError(f'Unknown unit: {unit!r} (expected one of {", ".join(table)})') from None
 
 
 def convert_bytes(value, src: str = 'b', dst: str = 'mib', rounding: int | None = None) -> float:
