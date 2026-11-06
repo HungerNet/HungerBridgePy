@@ -45,7 +45,8 @@ jobs:
       - name: Start standalone HungerBridge
         working-directory: HungerBridge
         run: |
-          ./gradlew :common:standaloneBridge --no-daemon -Phb.standalone.port=19130 > ../bridge.log 2>&1 &
+          sed -i 's/\r$//' gradlew
+          bash ./gradlew :common:standaloneBridge --no-daemon -Phb.standalone.port=19130 > ../bridge.log 2>&1 &
           for i in $(seq 1 180); do grep -q '^PICKUP_URL=' ../bridge.log && break; sleep 1; done
           grep '^PICKUP_URL=' ../bridge.log | head -1 | cut -d= -f2- > ../pickup.txt
           test -s ../pickup.txt || (cat ../bridge.log; exit 1)
