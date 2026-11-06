@@ -1,4 +1,4 @@
-"""Backwards-compatibility module.
+'''Backwards-compatibility module.
 
 The client used to live entirely in this file. It has been split into:
 
@@ -11,7 +11,7 @@ The client used to live entirely in this file. It has been split into:
 
 Existing imports such as ``from hungerbridge.bridge import BridgeClient``
 keep working.
-"""
+'''
 
 from __future__ import annotations
 
@@ -22,9 +22,9 @@ from .exceptions import HungerBridgeError, HungerBridgeRateLimit, InvalidModeErr
 from .stream import Stream
 from .units import convert
 
-__all__ = ["BridgeClient", "Stream", "HungerBridgeError", "HungerBridgeRateLimit", "InvalidModeError", "convert"]
+__all__ = ['BridgeClient', 'Stream', 'HungerBridgeError', 'HungerBridgeRateLimit', 'InvalidModeError', 'convert']
 
 
 def _canonicalize_json_body(value):
-    """Deprecated private helper kept for compatibility (``None`` → ``''``)."""
+    '''Deprecated private helper kept for compatibility (``None`` → ``''``).'''
     return _canonical_body(value)

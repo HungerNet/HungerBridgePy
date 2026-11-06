@@ -1,5 +1,5 @@
 run: true
-version: '1.0-dev.3'
+version: '1.0-dev.4'
 description: |
   Dev 1:
   - Initial release
@@ -7,3 +7,5 @@ description: |
   - Restructure
   Dev 3:
   - Fix build 
+  Dev 4:
+  - Used single quotes

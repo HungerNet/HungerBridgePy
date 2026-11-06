@@ -1,16 +1,16 @@
-"""Server-Sent-Events client for ``GET /server/stream``.
+'''Server-Sent-Events client for ``GET /server/stream``.
 
 Wire format (protocol v1)::
 
     : history-end          <- comment, sent once the requested history is written
-    data:<log line>        <- one event per log line; "\\n"/"\\r" inside the line
+    data:<log line>        <- one event per log line; '\\n'/'\\r' inside the line
                               are escaped as the two characters backslash+n/r
     : keepalive            <- comment every 15 s
 
 Older servers do not send ``history-end``; for them the client falls back to
 the previous time-based heuristic (lines received within one second of
 connecting are treated as history).
-"""
+'''
 
 from __future__ import annotations
 
@@ -26,28 +26,28 @@ import requests
 from .protocol import PROTOCOL_HEADER, SSE_HISTORY_END
 from .transport import parse_retry_after
 
-__all__ = ["Stream", "parse_sse"]
+__all__ = ['Stream', 'parse_sse']
 
 HeadersProvider = Union[Callable[[], dict], dict]
 
-_ANSI_RE = re.compile(r"\x1b\[[0-9;]*m")
-# Matches "[12:34:56]" and the server's "[12:34:56 INFO]" line prefix.
-_TIMESTAMP_RE = re.compile(r"\[([0-9]{2}:[0-9]{2}:[0-9]{2})(?:\]|\s)")
-_LINE_SPLIT_RE = re.compile(r"\r\n|\r|\n")
+_ANSI_RE = re.compile(r'\x1b\[[0-9;]*m')
+# Matches '[12:34:56]' and the server's '[12:34:56 INFO]' line prefix.
+_TIMESTAMP_RE = re.compile(r'\[([0-9]{2}:[0-9]{2}:[0-9]{2})(?:\]|\s)')
+_LINE_SPLIT_RE = re.compile(r'\r\n|\r|\n')
 
 #: Legacy servers (no ``history-end`` marker): history window after connect.
 LEGACY_HISTORY_WINDOW_SEC = 1.0
 
 
 def _split_lines(chunks: Iterable[bytes]) -> Iterator[str]:
-    """Split a byte stream into SSE lines (CRLF, LF or CR terminated).
+    '''Split a byte stream into SSE lines (CRLF, LF or CR terminated).
 
     Unlike ``str.splitlines`` this does not split on Unicode line separators
     (U+2028, form feed, ...) that may legitimately appear inside a log line.
     A trailing line without terminator is discarded, as the SSE spec requires.
-    """
-    decoder = codecs.getincrementaldecoder("utf-8")(errors="replace")
-    buf = ""
+    '''
+    decoder = codecs.getincrementaldecoder('utf-8')(errors='replace')
+    buf = ''
     for chunk in chunks:
         if not chunk:
             continue
@@ -56,22 +56,22 @@ def _split_lines(chunks: Iterable[bytes]) -> Iterator[str]:
             match = _LINE_SPLIT_RE.search(buf)
             if match is None:
                 break
-            if match.group() == "\r" and match.end() == len(buf):
+            if match.group() == '\r' and match.end() == len(buf):
                 break  # possibly the first half of a CRLF split across chunks
             yield buf[: match.start()]
             buf = buf[match.end() :]
-    buf += decoder.decode(b"", final=True)
+    buf += decoder.decode(b'', final=True)
     yield from _LINE_SPLIT_RE.split(buf)[:-1]
 
 
 def _iter_raw_chunks(response: requests.Response) -> Iterator[bytes]:
-    """Yield bytes as soon as they arrive.
+    '''Yield bytes as soon as they arrive.
 
     ``iter_content(chunk_size=None)`` only streams chunked responses; behind a
     proxy that turns the stream into a close-delimited body it would block
     until EOF. urllib3 2's ``read1`` returns whatever is available instead.
-    """
-    read1 = getattr(response.raw, "read1", None)
+    '''
+    read1 = getattr(response.raw, 'read1', None)
     if read1 is None:
         yield from response.iter_content(chunk_size=1)
         return
@@ -83,41 +83,41 @@ def _iter_raw_chunks(response: requests.Response) -> Iterator[bytes]:
 
 
 def parse_sse(lines: Iterable[str]) -> Iterator[Tuple[str, str]]:
-    """Parse SSE lines into ``("data", text)`` and ``("comment", text)`` items.
+    '''Parse SSE lines into ``('data', text)`` and ``('comment', text)`` items.
 
     Follows the WHATWG SSE rules: a single space after the colon is removed
     (and nothing else, so indentation inside log lines is preserved);
     multiple ``data`` fields in one event are joined with ``\\n``.
-    """
+    '''
     data: Optional[List[str]] = None
     for line in lines:
-        if line == "":
+        if line == '':
             if data is not None:
-                yield ("data", "\n".join(data))
+                yield ('data', '\n'.join(data))
             data = None
             continue
-        name, sep, value = line.partition(":")
-        if sep and value.startswith(" "):
+        name, sep, value = line.partition(':')
+        if sep and value.startswith(' '):
             value = value[1:]
-        if name == "":
-            yield ("comment", value)
-        elif name == "data":
+        if name == '':
+            yield ('comment', value)
+        elif name == 'data':
             if data is None:
                 data = []
             data.append(value)
-        # "event", "id", "retry" and unknown fields are ignored.
+        # 'event', 'id', 'retry' and unknown fields are ignored.
     if data is not None:
-        yield ("data", "\n".join(data))
+        yield ('data', '\n'.join(data))
 
 
 class Stream:
-    """SSE streaming wrapper for ``/server/stream``.
+    '''SSE streaming wrapper for ``/server/stream``.
 
     ``history_handler(lines)`` receives the requested history once per
     connection; ``new_log_handler(line)`` receives each live line. Without
     handlers, lines are accumulated in :meth:`getRaw`, :meth:`getSanitized`
     and :meth:`getTimestamped`.
-    """
+    '''
 
     def __init__(
         self,
@@ -129,7 +129,7 @@ class Stream:
         connect_timeout: float = 5.0,
         session_factory: Callable[[], requests.Session] = requests.Session,
     ):
-        self.url = base_url.rstrip("/") + "/server/stream"
+        self.url = base_url.rstrip('/') + '/server/stream'
         self.headers_provider = headers_provider
         self.history_handler = history_handler
         self.new_log_handler = new_log_handler
@@ -192,13 +192,13 @@ class Stream:
         reconnect_delay: float = 1.0,
         max_reconnect_delay: float = 30.0,
     ) -> None:
-        """Start streaming in a background daemon thread (no-op if already running).
+        '''Start streaming in a background daemon thread (no-op if already running).
 
         ``keepalive`` is the server's keepalive interval; the read timeout is
         derived from it so dead connections are detected. With
         ``reconnect=True`` the stream reconnects with exponential back-off and
         de-duplicates the replayed history against the last line seen.
-        """
+        '''
         if self._thread and self._thread.is_alive():
             return
         stop = threading.Event()
@@ -208,7 +208,7 @@ class Stream:
         self._thread = threading.Thread(
             target=self._run,
             args=(stop, history, read_timeout, reconnect, reconnect_delay, max_reconnect_delay),
-            name="HungerBridgeStream",
+            name='HungerBridgeStream',
             daemon=True,
         )
         self._thread.start()
@@ -230,7 +230,7 @@ class Stream:
         self._connected.clear()
 
     def wait_until_connected(self, timeout: Optional[float] = None) -> bool:
-        """Block until the server accepted the stream (HTTP 200 received)."""
+        '''Block until the server accepted the stream (HTTP 200 received).'''
         return self._connected.wait(timeout)
 
     def isConnected(self) -> bool:
@@ -254,10 +254,10 @@ class Stream:
         response = self._response
         if response is None:
             return
-        raw = getattr(response, "raw", None)
+        raw = getattr(response, 'raw', None)
         candidates = [
-            getattr(getattr(raw, "_connection", None), "sock", None),  # urllib3 2.x
-            getattr(getattr(getattr(getattr(raw, "_fp", None), "fp", None), "raw", None), "_sock", None),  # http.client
+            getattr(getattr(raw, '_connection', None), 'sock', None),  # urllib3 2.x
+            getattr(getattr(getattr(getattr(raw, '_fp', None), 'fp', None), 'raw', None), '_sock', None),  # http.client
         ]
         for sock in candidates:
             if sock is None:
@@ -280,8 +280,8 @@ class Stream:
     def _request_url(self, history: Optional[int]) -> str:
         if not history:
             return self.url
-        sep = "&" if "?" in self.url else "?"
-        return f"{self.url}{sep}history={int(history)}"
+        sep = '&' if '?' in self.url else '?'
+        return f'{self.url}{sep}history={int(history)}'
 
     def _run(self, stop, history, read_timeout, reconnect, delay, max_delay) -> None:
         backoff = delay
@@ -301,7 +301,7 @@ class Stream:
                 if not reconnect or stop.is_set():
                     break
                 backoff = delay if received else min(backoff * 2, max_delay)
-                retry_after = getattr(self.last_error, "retry_after", None)
+                retry_after = getattr(self.last_error, 'retry_after', None)
                 wait = max(backoff, float(retry_after)) if isinstance(retry_after, (int, float)) else backoff
                 stop.wait(wait)
         finally:
@@ -310,9 +310,9 @@ class Stream:
                 self._stop_event = None
 
     def _stream_once(self, stop: threading.Event, history: Optional[int], read_timeout: float) -> bool:
-        """Run a single connection. Returns True if any event was received."""
+        '''Run a single connection. Returns True if any event was received.'''
         headers = self.headers_provider() if callable(self.headers_provider) else dict(self.headers_provider)
-        headers.setdefault("Accept", "text/event-stream")
+        headers.setdefault('Accept', 'text/event-stream')
         self._session = self._session_factory()
         response = self._session.get(
             self._request_url(history),
@@ -322,9 +322,9 @@ class Stream:
         )
         self._response = response
         if not response.ok:
-            error = requests.HTTPError(f"{response.status_code}: {response.text}", response=response)
+            error = requests.HTTPError(f'{response.status_code}: {response.text}', response=response)
             if response.status_code == 429:
-                error.retry_after = parse_retry_after(response.headers.get("Retry-After"))  # type: ignore[attr-defined]
+                error.retry_after = parse_retry_after(response.headers.get('Retry-After'))  # type: ignore[attr-defined]
             raise error
         self._connections += 1
         self._connected.set()
@@ -359,7 +359,7 @@ class Stream:
             if stop.is_set():
                 break
             received = True
-            if kind == "comment":
+            if kind == 'comment':
                 if in_history and (value.strip() == SSE_HISTORY_END or (legacy and time.monotonic() >= legacy_deadline)):
                     finish_history()
                 continue
@@ -378,9 +378,9 @@ class Stream:
 
     @staticmethod
     def sanitize(line: str) -> str:
-        """Strip ANSI colors, unescape ``\\n``/``\\r`` and trailing whitespace."""
-        clean = _ANSI_RE.sub("", line)
-        clean = clean.replace("\\n", "\n").replace("\\r", "\r")
+        '''Strip ANSI colors, unescape ``\\n``/``\\r`` and trailing whitespace.'''
+        clean = _ANSI_RE.sub('', line)
+        clean = clean.replace('\\n', '\n').replace('\\r', '\r')
         return clean.rstrip()
 
     @staticmethod

@@ -1,4 +1,4 @@
-"""HTTP transport: signing, throttling, retries, timeouts and error mapping."""
+'''HTTP transport: signing, throttling, retries, timeouts and error mapping.'''
 
 from __future__ import annotations
 
@@ -21,7 +21,7 @@ from .exceptions import (
 )
 from .protocol import PROTOCOL_HEADER, PROTOCOL_VERSION
 
-__all__ = ["Transport", "DEFAULT_TIMEOUT"]
+__all__ = ['Transport', 'DEFAULT_TIMEOUT']
 
 Timeout = Union[float, Tuple[float, float], None]
 
@@ -29,7 +29,7 @@ Timeout = Union[float, Tuple[float, float], None]
 #: thread server-side, so 30 s of read time is generous.
 DEFAULT_TIMEOUT: Tuple[float, float] = (5.0, 30.0)
 
-BASE_HEADERS = {"Content-Type": "application/json", "Accept": "application/json"}
+BASE_HEADERS = {'Content-Type': 'application/json', 'Accept': 'application/json'}
 
 _STATUS_ERRORS = {
     401: HungerBridgeAuthError,
@@ -48,10 +48,10 @@ def parse_retry_after(value: Optional[str]) -> Union[int, str, None]:
 
 
 class Transport:
-    """Signs and sends requests to one HungerBridge server.
+    '''Signs and sends requests to one HungerBridge server.
 
     Thread-safe: a single instance may be shared between threads.
-    """
+    '''
 
     def __init__(
         self,
@@ -66,7 +66,7 @@ class Transport:
         session: Optional[requests.Session] = None,
         sleep: Callable[[float], None] = time.sleep,
     ):
-        self.base_url = base_url.rstrip("/")
+        self.base_url = base_url.rstrip('/')
         self.credentials = credentials
         self.max_retries = int(max_retries or 0)
         self.retry_backoff_sec = float(retry_backoff_sec or 1.0)
@@ -100,37 +100,37 @@ class Transport:
     # -- requests ----------------------------------------------------------------
 
     def get(self, path: str) -> Any:
-        return self.request("GET", path)
+        return self.request('GET', path)
 
     def post(self, path: str, payload: Any) -> Any:
-        return self.request("POST", path, payload)
+        return self.request('POST', path, payload)
 
     def request(self, method: str, path: str, payload: Any = None) -> Any:
-        """Send a signed request and return the decoded JSON (or text) body.
+        '''Send a signed request and return the decoded JSON (or text) body.
 
         429 responses are retried up to ``max_retries`` times, waiting
         ``max(retry_backoff_sec * attempt, Retry-After)``. Each attempt is
         signed with a fresh nonce/timestamp. Returns ``None`` instead of
         raising on a final 429 when ``swallow_rate_limit`` is set.
-        """
+        '''
         self._throttle()
-        full_path = "/" + path.lstrip("/")
+        full_path = '/' + path.lstrip('/')
         url = self.base_url + full_path
-        body = canonical_body(payload) if method.upper() != "GET" else None
+        body = canonical_body(payload) if method.upper() != 'GET' else None
 
         for attempt in range(self.max_retries + 1):
             headers = self.auth_headers(method, full_path, payload if body is not None else None)
             try:
                 response = self.session.request(method, url, headers=headers, data=body, timeout=self.timeout)
             except requests.exceptions.Timeout as exc:
-                raise HungerBridgeConnectionError(f"HungerBridge request timed out: {method} {full_path}") from exc
+                raise HungerBridgeConnectionError(f'HungerBridge request timed out: {method} {full_path}') from exc
             except requests.exceptions.ConnectionError as exc:
-                raise HungerBridgeConnectionError(f"Cannot reach HungerBridge at {self.base_url}: {exc}") from exc
+                raise HungerBridgeConnectionError(f'Cannot reach HungerBridge at {self.base_url}: {exc}') from exc
 
             self._observe_protocol(response)
 
             if response.status_code == 429:
-                retry_after = parse_retry_after(response.headers.get("Retry-After"))
+                retry_after = parse_retry_after(response.headers.get('Retry-After'))
                 if attempt < self.max_retries:
                     delay = self.retry_backoff_sec * (attempt + 1)
                     if isinstance(retry_after, (int, float)):
@@ -154,14 +154,14 @@ class Transport:
         if raw is None:
             return
         try:
-            version = int(str(raw).split(".", 1)[0])
+            version = int(str(raw).split('.', 1)[0])
         except ValueError:
             return
         self.server_protocol_version = version
         if version != PROTOCOL_VERSION and not self._warned_protocol:
             self._warned_protocol = True
             warnings.warn(
-                f"HungerBridge server speaks protocol v{version}, this client implements v{PROTOCOL_VERSION}",
+                f'HungerBridge server speaks protocol v{version}, this client implements v{PROTOCOL_VERSION}',
                 RuntimeWarning,
                 stacklevel=4,
             )
@@ -171,12 +171,12 @@ class Transport:
         data = _json_or_none(response)
         code = reason = None
         if isinstance(data, dict):
-            code = data.get("error") if isinstance(data.get("error"), str) else None
-            reason = data.get("reason") if isinstance(data.get("reason"), str) else None
+            code = data.get('error') if isinstance(data.get('error'), str) else None
+            reason = data.get('reason') if isinstance(data.get('reason'), str) else None
         cls = _STATUS_ERRORS.get(response.status_code, HungerBridgeError)
         # Message format kept from the original client for log/grep compatibility.
         return cls(
-            f"HungerBridge error {response.status_code}: {response.text}",
+            f'HungerBridge error {response.status_code}: {response.text}',
             status=response.status_code,
             code=code,
             reason=reason,
