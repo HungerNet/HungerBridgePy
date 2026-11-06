@@ -26,8 +26,8 @@ def test_golden_path_vectors(vectors):
 def test_non_bmp_uses_utf16_surrogates_regression():
     # Regression: the original client emitted '\\u1f600' (5 hex digits), which the
     # server parsed as U+1F60 followed by '0' and rejected the signature.
-    assert quote_string('\U0001F600') == '\\ud83d\\ude00'
-    assert quote_string('\U0010FFFF') == '\\udbff\\udfff'
+    assert quote_string('\U0001F600') == '"\\ud83d\\ude00"'
+    assert quote_string('\U0010FFFF') == '"\\udbff\\udfff"'
 
 
 def test_output_is_pure_ascii():
