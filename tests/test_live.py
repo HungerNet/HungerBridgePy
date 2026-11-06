@@ -14,6 +14,7 @@ from __future__ import annotations
 import os
 import time
 import uuid
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import pytest
 import requests
@@ -223,14 +224,20 @@ def test_bad_request_is_400_not_dropped_connection(client):
 
 
 def test_zz_rate_limit_sends_retry_after_and_client_recovers(client):
-    hasty = BridgeClient(client.base, client._token_id, client._token_secret, max_retries=0)
     hit = None
-    for _ in range(60):
-        try:
-            hasty.isOk()
-        except HungerBridgeRateLimit as exc:
-            hit = exc
-            break
+
+    def ping_without_retries():
+        hasty = BridgeClient(client.base, client._token_id, client._token_secret, max_retries=0)
+        return hasty.isOk()
+
+    with ThreadPoolExecutor(max_workers=100) as pool:
+        requests_in_burst = [pool.submit(ping_without_retries) for _ in range(100)]
+        for request in as_completed(requests_in_burst):
+            try:
+                request.result()
+            except HungerBridgeRateLimit as exc:
+                hit = exc
+                break
     assert hit is not None, "rate limit never triggered"
     assert isinstance(hit.retry_after, int) and hit.retry_after >= 1
     # A retrying client recovers transparently (fresh nonce per attempt).
