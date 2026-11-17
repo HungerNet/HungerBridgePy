@@ -179,11 +179,11 @@ def _raw(client, method, path, headers, body=None):
 
 def test_unauthenticated_is_rejected(client):
     with pytest.raises(HungerBridgeAuthError):
-        BridgeClient(client.base).isOk()
+        BridgeClient(client.base, max_retries=5, retry_backoff_sec=0.5).isOk()
 
 
 def test_wrong_secret_is_rejected(client):
-    bad = BridgeClient(client.base, client._token_id, "00" * 32)
+    bad = BridgeClient(client.base, client._token_id, "00" * 32, max_retries=5, retry_backoff_sec=0.5)
     with pytest.raises(HungerBridgeAuthError) as info:
         bad.isOk()
     assert info.value.reason == "invalid_credentials"
