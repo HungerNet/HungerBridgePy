@@ -41,10 +41,10 @@ client.log("hello from python", level="BRIDGE", thread="bot")
 | Method | Endpoint | Returns |
 |---|---|---|
 | `isOk()`, `getServerTime()`, `getPing()` | `GET /ping` | bool, epoch ms, RTT ms |
-| `getTokenInfo()` | `GET /auth/check` | `token_id`, `policy_id`, `permissions` |
+| `getTokenInfo()` | `GET /auth/check` | `token_id`, `policy_id`, `permissions`, `expiry` |
 | `getServerMeta()`, `getPlatform()`, `getMinecraftVersion()`, `getBridgeVersion()`, `getBridgePort()`, `getProtocolVersion()` | `GET /server/meta` | |
-| `getPlayers('count'\|'list')`, `getMaxPlayers()` | `GET /players/list` | |
-| `getTPS('current'\|'1m'\|'5m'\|'15m')` | `GET /world/tps` | float, `-1` if unavailable |
+| `getPlayers('count'\|'list')`, `getMaxPlayers()`, `getPlayerStats()` | `GET /players/list` | |
+| `getTPS('current'\|'1m'\|'5m'\|'15m')`, `getTPSStats()` | `GET /world/tps` | float, `-1` if unavailable |
 | `getMSPT()` | `GET /world/mspt` | float |
 | `getWorldTime()`, `getWorldTimeInfo()` | `GET /world/time` | ticks of day (0–23999) / dict |
 | `getWorldWeather()` | `GET /world/weather` | `clear`/`rain`/`thunder` |
@@ -55,6 +55,7 @@ client.log("hello from python", level="BRIDGE", thread="bot")
 | `log(message, level='info', thread=None)` | `POST /server/log` | dict |
 | `stopServer()` | `POST /server/stop` | dict |
 | `BridgeClient.redeemPickup(url)` / `fromPickup(url)` | `GET /pickup/<id>` | `(token_id, secret)` / client |
+| `streamLogs(history, timeout=, reconnect=, sanitize=)` / `openStream(...)` | `GET /server/stream` | iterator of lines / `Stream` |
 
 Constructor options: `max_retries`, `retry_backoff_sec`, `swallow_rate_limit`,
 `static_delay` (minimum gap between requests), `timeout` (default `(5, 30)` seconds),
@@ -62,19 +63,51 @@ Constructor options: `max_retries`, `retry_backoff_sec`, `swallow_rate_limit`,
 
 ### Log streaming (SSE)
 
+The simplest way is the blocking iterator:
+
+```python
+for line in client.streamLogs(history=50, reconnect=True, sanitize=True):
+    if "joined the game" in line:
+        print(line)
+```
+
+`streamLogs(history=None, *, timeout=None, reconnect=False, sanitize=False)` replays up to
+`history` recent lines (`True` = the server maximum, `MAX_HISTORY` = 200), then yields live
+lines. It stops when nothing arrives for `timeout` seconds or when the server closes the stream
+(unless `reconnect`), and raises the typed error that ended the connection. `break` disconnects.
+
+For callbacks in a background thread use a `Stream`:
+
 ```python
 def on_history(lines): ...
 def on_line(line): print(client.stream.sanitize(line))
+def on_close(error): print("stream ended", error)
 
 client = BridgeClient(url, token, history_handler=on_history, new_log_handler=on_line)
 client.stream.connect(history=50, reconnect=True)   # background thread
 ...
 client.stream.disconnect()
+
+other = client.openStream(new_log_handler=on_line, close_handler=on_close)   # independent connection
 ```
 
 Without handlers lines are buffered in `getRaw()`, `getSanitized()` and `getTimestamped()`.
 With `reconnect=True` the stream reconnects with exponential back-off and replays only
-the history lines it has not seen yet.
+the history lines it has not seen yet. Permanent errors (401, 403, 404) end the stream instead
+of being retried; `stream.last_error` holds the typed error.
+
+### Release jars
+
+```python
+from hungerbridge import find_release
+from hungerbridge.releases import list_release_assets, loader_for
+
+asset = find_release("1.21.11", "paper")     # or "latest", loader "PURPUR" -> paper
+print(asset.name, asset.url, asset.directory)  # .../plugins
+```
+
+Release assets are named `HungerBridge-<loader>-<minecraft>-<version>.jar`; jars from
+releases before that naming (`<minecraft>-<loader>-<version>.jar`) are recognised too.
 
 ### Errors
 
@@ -103,6 +136,7 @@ if it differs from `hungerbridge.PROTOCOL_VERSION`.
 | `auth.py` | credentials and HMAC signing |
 | `canonical.py` | canonical JSON + path normalization (wire format) |
 | `stream.py` | SSE parser and `Stream` |
+| `releases.py` | release jar discovery on GitHub (`find_release`, `ReleaseAsset`, `loader_for`) |
 | `exceptions.py`, `units.py`, `protocol.py` | errors, unit conversion, protocol constants |
 | `bridge.py` | backwards-compatible re-exports of the old single-module API |
 

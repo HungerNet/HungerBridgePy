@@ -1,6 +1,7 @@
-__pycache__/
-*.pyc
-dist/
+new-version/
+working-version/
 build/
-*.egg-info/
-.env
+*.lock
+*.bin
+*.class
+.gradle/

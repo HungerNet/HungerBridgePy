@@ -1,0 +1,182 @@
+Metadata-Version: 2.4
+Name: hungerbridge
+Version: 0.0.0
+Summary: Python client for the HungerBridge Minecraft (Paper/Folia/Fabric) HTTP bridge
+Author: iFamished
+License: MIT
+Project-URL: Homepage, https://github.com/HungerNet/HungerBridgePy
+Project-URL: Source, https://github.com/HungerNet/HungerBridgePy
+Project-URL: Issues, https://github.com/HungerNet/HungerBridgePy/issues
+Project-URL: Server plugin, https://github.com/HungerNet/HungerBridge
+Keywords: minecraft,paper,folia,fabric,automation,server-management,hungernet
+Classifier: Programming Language :: Python :: 3
+Classifier: Programming Language :: Python :: 3.9
+Classifier: Programming Language :: Python :: 3.10
+Classifier: Programming Language :: Python :: 3.11
+Classifier: Programming Language :: Python :: 3.12
+Classifier: Programming Language :: Python :: 3.13
+Classifier: Programming Language :: Python :: 3.14
+Classifier: License :: OSI Approved :: MIT License
+Classifier: Operating System :: OS Independent
+Classifier: Development Status :: 4 - Beta
+Classifier: Intended Audience :: Developers
+Classifier: Topic :: Software Development :: Libraries
+Classifier: Topic :: System :: Systems Administration
+Classifier: Typing :: Typed
+Requires-Python: >=3.9
+Description-Content-Type: text/markdown
+License-File: LICENSE
+Requires-Dist: requests>=2.28
+Provides-Extra: test
+Requires-Dist: pytest>=7; extra == "test"
+Dynamic: license-file
+
+# HungerBridgePy
+
+Python client for [HungerBridge](https://github.com/HungerNet/HungerBridge), the HTTP
+bridge plugin/mod for **Paper, Purpur, Folia and Fabric** Minecraft servers
+(1.21.11, 26.1.2, 26.2, 26.3).
+
+```bash
+pip install hungerbridge
+```
+
+> The distribution was previously configured as `hungerlib`, which is a different
+> PyPI project. The import name has always been `hungerbridge`.
+
+## Quick start
+
+1. On the server console create a token for a policy from `policies.yaml`:
+
+   ```text
+   /hb token create my-bot admin
+   Pickup passkey: …
+   Token created. Retrieve it at: /pickup/<uuid>?passkey=<hex>
+   ```
+
+2. Redeem the single-use pickup and talk to the server:
+
+```python
+from hungerbridge import BridgeClient
+
+client = BridgeClient.fromPickup("http://127.0.0.1:1913/pickup/<uuid>?passkey=<hex>")
+# later: BridgeClient("http://127.0.0.1:1913", "my-bot", "<64 hex chars>")
+#    or: BridgeClient("http://127.0.0.1:1913", "my-bot:<64 hex chars>")
+
+print(client.getServerMeta())          # platform, minecraft_version, bridge_version, port, protocol_version
+print(client.getTPS("1m"), client.getMSPT())
+print(client.runCommand("list"))       # captured console output
+client.log("hello from python", level="BRIDGE", thread="bot")
+```
+
+## API
+
+| Method | Endpoint | Returns |
+|---|---|---|
+| `isOk()`, `getServerTime()`, `getPing()` | `GET /ping` | bool, epoch ms, RTT ms |
+| `getTokenInfo()` | `GET /auth/check` | `token_id`, `policy_id`, `permissions`, `expiry` |
+| `getServerMeta()`, `getPlatform()`, `getMinecraftVersion()`, `getBridgeVersion()`, `getBridgePort()`, `getProtocolVersion()` | `GET /server/meta` | |
+| `getPlayers('count'\|'list')`, `getMaxPlayers()`, `getPlayerStats()` | `GET /players/list` | |
+| `getTPS('current'\|'1m'\|'5m'\|'15m')`, `getTPSStats()` | `GET /world/tps` | float, `-1` if unavailable |
+| `getMSPT()` | `GET /world/mspt` | float |
+| `getWorldTime()`, `getWorldTimeInfo()` | `GET /world/time` | ticks of day (0–23999) / dict |
+| `getWorldWeather()` | `GET /world/weather` | `clear`/`rain`/`thunder` |
+| `getLoadedChunks()`, `getLoadedEntities()` | `GET /world/chunks`, `/world/entities` | `total`, `world`, `world_nether`, `world_the_end` |
+| `getUptime()`, `getCPUStats()`, `getMemoryStats(unit)`, `getProcessMemory(unit)`, `getGCStats()`, `getThreadStats()`, `getNetworkStats()` | `GET /system/*` | |
+| `runCommand(cmd, showConsole=False, silent=False, normalize=True)` | `POST /server/run` | output text / dict |
+| `broadcast(msg, prefix=None)` | `POST /server/run` (`tellraw @a`) | |
+| `log(message, level='info', thread=None)` | `POST /server/log` | dict |
+| `stopServer()` | `POST /server/stop` | dict |
+| `BridgeClient.redeemPickup(url)` / `fromPickup(url)` | `GET /pickup/<id>` | `(token_id, secret)` / client |
+| `streamLogs(history, timeout=, reconnect=, sanitize=)` / `openStream(...)` | `GET /server/stream` | iterator of lines / `Stream` |
+
+Constructor options: `max_retries`, `retry_backoff_sec`, `swallow_rate_limit`,
+`static_delay` (minimum gap between requests), `timeout` (default `(5, 30)` seconds),
+`session` (custom `requests.Session`).
+
+### Log streaming (SSE)
+
+The simplest way is the blocking iterator:
+
+```python
+for line in client.streamLogs(history=50, reconnect=True, sanitize=True):
+    if "joined the game" in line:
+        print(line)
+```
+
+`streamLogs(history=None, *, timeout=None, reconnect=False, sanitize=False)` replays up to
+`history` recent lines (`True` = the server maximum, `MAX_HISTORY` = 200), then yields live
+lines. It stops when nothing arrives for `timeout` seconds or when the server closes the stream
+(unless `reconnect`), and raises the typed error that ended the connection. `break` disconnects.
+
+For callbacks in a background thread use a `Stream`:
+
+```python
+def on_history(lines): ...
+def on_line(line): print(client.stream.sanitize(line))
+def on_close(error): print("stream ended", error)
+
+client = BridgeClient(url, token, history_handler=on_history, new_log_handler=on_line)
+client.stream.connect(history=50, reconnect=True)   # background thread
+...
+client.stream.disconnect()
+
+other = client.openStream(new_log_handler=on_line, close_handler=on_close)   # independent connection
+```
+
+Without handlers lines are buffered in `getRaw()`, `getSanitized()` and `getTimestamped()`.
+With `reconnect=True` the stream reconnects with exponential back-off and replays only
+the history lines it has not seen yet. Permanent errors (401, 403, 404) end the stream instead
+of being retried; `stream.last_error` holds the typed error.
+
+### Release jars
+
+```python
+from hungerbridge import find_release
+from hungerbridge.releases import list_release_assets, loader_for
+
+asset = find_release("1.21.11", "paper")     # or "latest", loader "PURPUR" -> paper
+print(asset.name, asset.url, asset.directory)  # .../plugins
+```
+
+Release assets are named `HungerBridge-<loader>-<minecraft>-<version>.jar`; jars from
+releases before that naming (`<minecraft>-<loader>-<version>.jar`) are recognised too.
+
+### Errors
+
+All errors derive from `HungerBridgeError` (with `.status`, `.code`, `.reason`):
+`HungerBridgeAuthError` (401 — `reason` is one of `invalid_credentials`,
+`timestamp_out_of_range`, `nonce_replay`, `token_expired`), `HungerBridgeForbidden` (403),
+`HungerBridgeNotFound` (404), `HungerBridgeRateLimit` (429, `.retry_after`),
+`HungerBridgeConnectionError` (unreachable/timeout), `InvalidModeError`.
+
+## Protocol
+
+Requests are signed with HMAC-SHA256 over
+`METHOD\npath\ntimestamp\nnonce\ncanonical_json_body` (headers `X-Auth-Id`,
+`X-Auth-Timestamp`, `X-Auth-Nonce`, `X-Auth-Signature`). The canonical JSON rules are
+documented in `hungerbridge/canonical.py`; `tests/data/protocol-vectors.json` holds golden
+vectors that are shared with (and verified by) the Java server test suite. The server
+advertises its protocol version in the `X-HungerBridge-Protocol` header; the client warns
+if it differs from `hungerbridge.PROTOCOL_VERSION`.
+
+## Package layout
+
+| Module | Responsibility |
+|---|---|
+| `client.py` | `BridgeClient` endpoint wrappers, pickup redemption |
+| `transport.py` | HTTP session, timeouts, throttling, 429 retry, error mapping |
+| `auth.py` | credentials and HMAC signing |
+| `canonical.py` | canonical JSON + path normalization (wire format) |
+| `stream.py` | SSE parser and `Stream` |
+| `releases.py` | release jar discovery on GitHub (`find_release`, `ReleaseAsset`, `loader_for`) |
+| `exceptions.py`, `units.py`, `protocol.py` | errors, unit conversion, protocol constants |
+| `bridge.py` | backwards-compatible re-exports of the old single-module API |
+
+## Development
+
+```bash
+pip install -e .[test]
+pytest                                   # unit + protocol tests (no server needed)
+HB_PICKUP_URL=http://127.0.0.1:1913/pickup/<id>?passkey=<hex> pytest -m live   # against a real server
+```
