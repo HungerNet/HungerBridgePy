@@ -166,7 +166,15 @@ def test_custom_log_level(client):
 
 
 def _raw(client, method, path, headers, body=None):
-    return requests.request(method, client.base + path, headers=headers, data=body, timeout=10)
+    for attempt in range(3):
+        response = requests.request(method, client.base + path, headers=headers, data=body, timeout=10)
+        if response.status_code != 429 or attempt == 2:
+            return response
+        try:
+            retry_after = max(1, int(response.headers.get("Retry-After", "1")))
+        except ValueError:
+            retry_after = 1
+        time.sleep(retry_after)
 
 
 def test_unauthenticated_is_rejected(client):
