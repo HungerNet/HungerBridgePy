@@ -1,19 +1,21 @@
+import pytest
+
 from hungerbridge.auth import (
     HEADER_ID,
     HEADER_NONCE,
     HEADER_SIGNATURE,
     HEADER_TIMESTAMP,
     Credentials,
-    build_auth_headers,
+    buildAuthHeaders,
     sign,
-    string_to_sign,
+    stringToSign,
 )
 
 
 def test_signature_vectors(vectors):
     key = bytes.fromhex(vectors["signatures"]["secret_hex"])
     for case in vectors["signatures"]["cases"]:
-        msg = string_to_sign(case["method"], case["path"], case["timestamp"], case["nonce"], case["body"])
+        msg = stringToSign(case["method"], case["path"], case["timestamp"], case["nonce"], case["body"])
         assert msg == case["string_to_sign"]
         assert sign(key, msg) == case["signature"]
 
@@ -21,11 +23,9 @@ def test_signature_vectors(vectors):
 def test_build_headers_matches_vector(vectors):
     secret = vectors["signatures"]["secret_hex"]
     case = vectors["signatures"]["cases"][2]  # POST /server/log
-    creds = Credentials("tok", secret)
-    headers = build_auth_headers(
-        creds, "POST", "/server/log", {"level": "info", "message": "hello"},
-        timestamp=case["timestamp"], nonce=case["nonce"],
-    )
+    creds = Credentials(token_id="tok", token_secret=secret)
+    headers = buildAuthHeaders(creds, "POST", "/server/log", {"level": "info", "message": "hello"},
+                               timestamp=case["timestamp"], nonce=case["nonce"])
     assert headers[HEADER_ID] == "tok"
     assert headers[HEADER_TIMESTAMP] == case["timestamp"]
     assert headers[HEADER_NONCE] == case["nonce"]
@@ -33,29 +33,30 @@ def test_build_headers_matches_vector(vectors):
 
 
 def test_each_call_uses_a_fresh_nonce():
-    creds = Credentials("tok", "00" * 32)
-    a = build_auth_headers(creds, "GET", "/ping")
-    b = build_auth_headers(creds, "GET", "/ping")
-    assert a[HEADER_NONCE] != b[HEADER_NONCE]
+    creds = Credentials(token_id="tok", token_secret="00" * 32)
+    assert buildAuthHeaders(creds, "GET", "/ping")[HEADER_NONCE] != buildAuthHeaders(creds, "GET", "/ping")[HEADER_NONCE]
 
 
-def test_no_credentials_means_no_auth_headers():
-    headers = build_auth_headers(None, "GET", "/ping", base_headers={"Accept": "application/json"})
-    assert headers == {"Accept": "application/json"}
+@pytest.mark.parametrize("token_id, token_secret", [
+    ("", "00" * 32),
+    ("  ", "00" * 32),
+    (None, "00" * 32),
+    ("id", ""),
+    ("id", "not-hex" * 10),
+    ("id", "00" * 31),          # 62 characters
+    ("id", f"id:{'00' * 32}"),  # the removed combined format is just an invalid secret
+])
+def test_credentials_are_validated(token_id, token_secret):
+    with pytest.raises(ValueError):
+        Credentials(token_id=token_id, token_secret=token_secret)
 
 
-def test_credentials_parse_variants():
-    assert Credentials.parse("id", "ab") == Credentials("id", "ab")
-    assert Credentials.parse("id:ab") == Credentials("id", "ab")
-    assert Credentials.parse(None) is None
-    assert Credentials.parse("id") is None
-    assert Credentials.parse("id", "") is None
+def test_credentials_are_normalized_and_secret_hidden():
+    creds = Credentials(token_id=" bot ", token_secret="AB" * 32)
+    assert creds.token_id == "bot" and creds.token_secret == "ab" * 32
+    assert creds.key == bytes.fromhex("ab" * 32)
+    assert "ab" * 32 not in repr(creds)
 
 
-def test_secret_repr_is_hidden():
-    assert "deadbeef" not in repr(Credentials("id", "deadbeef"))
-
-
-def test_non_hex_secret_falls_back_to_utf8():
-    assert Credentials("id", "not-hex!").key == b"not-hex!"
-    assert Credentials("id", "0aff").key == b"\x0a\xff"
+def test_combined_credentials_are_gone():
+    assert not hasattr(Credentials, "parse")

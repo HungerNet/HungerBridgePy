@@ -1,69 +1,99 @@
+"""Release resolution against a fake Modrinth API (metadata only, no file-name parsing)."""
+
+import json
+import os
+
 import pytest
 
-from hungerbridge import HungerBridgeNotFound
-from hungerbridge.releases import ReleaseAsset, find_release, list_release_assets, loader_for, parse_asset_name
+from hungerbridge import BridgeRelease, HungerBridgeNotFound, findRelease
+from hungerbridge.releases import listReleases
 
-NEW = ["HungerBridge-paper-1.21.11-4-alpha.94.jar", "HungerBridge-paper-26.2-4-alpha.94.jar",
-       "HungerBridge-fabric-26.1.2-4-alpha.94.jar", "HungerBridge-fabric-26.3-4-alpha.94.jar",
-       "HungerBridge-paper-26.2-4-alpha.94-sources.jar"]
-OLD = ["26.2-paper-4-alpha.93.jar", "1.21.11-fabric-4-alpha.93.jar", "26.2-fabric-4-alpha.93-dev.jar"]
+PROJECT = {"slug": "hungerbridge", "loaders": ["fabric", "folia", "paper", "purpur", "quilt"],
+           "game_versions": ["1.21.11", "26.1.2", "26.2", "26.3"]}
 
 
-@pytest.mark.parametrize("name, expected", [
-    ("HungerBridge-paper-26.2-4-alpha.94.jar", ("paper", "26.2")),
-    ("HungerBridge-fabric-1.21.11-4-alpha.94.jar", ("fabric", "1.21.11")),
-    ("26.2-paper-4-alpha.93.jar", ("paper", "26.2")),
-    ("1.21.11-fabric-4-alpha.93.jar", ("fabric", "1.21.11")),
-    ("HungerBridge-paper-26.2-4-alpha.94-sources.jar", None),
-    ("26.2-fabric-4-alpha.93-dev.jar", None),
-    ("README.md", None),
-])
-def test_parse_asset_name(name, expected):
-    assert parse_asset_name(name) == expected
+def version(vid, number, loaders, games, date, filename="whatever-name.jar", status="listed"):
+    return {"id": vid, "version_number": number, "version_type": "alpha", "status": status, "loaders": loaders,
+            "game_versions": games, "date_published": date,
+            "files": [{"filename": filename + ".sources", "url": "x", "primary": False},
+                      {"filename": filename, "url": f"https://cdn.modrinth.com/{vid}/{filename}", "primary": True,
+                       "size": 123, "hashes": {"sha512": "ff" * 64}}]}
 
 
-@pytest.mark.parametrize("server_type, loader", [
-    ("PAPER", "paper"), ("Purpur", "paper"), ("folia", "paper"), ("FABRIC", "fabric"), ("QUILT", "fabric"),
-    ("VANILLA", None), (None, None),
-])
-def test_loader_for(server_type, loader):
-    assert loader_for(server_type) == loader
+VERSIONS = [
+    version("new", "5-alpha.2", ["paper", "purpur", "folia"], ["26.3"], "2026-12-02T00:00:00Z", "HungerBridge-paper-26.3.jar"),
+    version("old", "5-alpha.1", ["paper", "purpur", "folia"], ["26.3"], "2026-12-01T00:00:00Z"),
+    version("v4", "4-alpha.97", ["paper", "purpur", "folia"], ["26.3"], "2026-11-01T00:00:00Z"),
+    version("v3", "3.0-alpha", ["paper"], ["26.3"], "2026-06-20T00:00:00Z"),
+    version("gone", "5-alpha.3", ["paper"], ["26.3"], "2026-12-03T00:00:00Z", status="archived"),
+]
 
 
 @pytest.fixture
-def github(fake_server):
-    def release(names, tag):
-        return {"tag_name": tag, "assets": [{"name": n, "browser_download_url": f"https://dl.example/{n}"} for n in names]}
+def modrinth(fake_server):
+    fake_server.json_route("GET", "/project/hungerbridge", PROJECT, protocol=None)
 
-    fake_server.json_route("GET", "/repos/HungerNet/HungerBridge/releases/latest", release(NEW, "v4-alpha.94"))
-    fake_server.json_route("GET", "/repos/HungerNet/HungerBridge/releases/tags/v4-alpha.93", release(OLD, "v4-alpha.93"))
-    return fake_server.url
+    def versions(h, rec):
+        from urllib.parse import parse_qs, urlparse
+        query = parse_qs(urlparse(rec.path).query)
+        loaders = json.loads(query["loaders"][0])
+        games = json.loads(query["game_versions"][0])
+        matching = [v for v in VERSIONS if set(loaders) & set(v["loaders"]) and set(games) & set(v["game_versions"])]
+        h.send_json(200, matching, protocol=None)
 
-
-def test_list_release_assets(github):
-    assets = list_release_assets(api_url=github)
-    assert [a.name for a in assets] == NEW[:4]
-    assert all(a.release == "v4-alpha.94" for a in assets)
-
-
-def test_find_exact_and_latest(github):
-    asset = find_release("1.21.11", "PURPUR", api_url=github)
-    assert asset == ReleaseAsset("HungerBridge-paper-1.21.11-4-alpha.94.jar",
-                                 "https://dl.example/HungerBridge-paper-1.21.11-4-alpha.94.jar",
-                                 "paper", "1.21.11", "v4-alpha.94")
-    assert asset.directory == "/plugins"
-    assert find_release("latest", "fabric", api_url=github).minecraft_version == "26.3"
+    fake_server.route("GET", "/project/hungerbridge/version", versions)
+    return fake_server
 
 
-def test_old_release_names_still_work(github):
-    asset = find_release("26.2", "paper", "v4-alpha.93", api_url=github)
-    assert asset.name == "26.2-paper-4-alpha.93.jar" and asset.release == "v4-alpha.93"
+def test_newest_compatible_release(modrinth):
+    release = findRelease(minecraft_version="26.3", loader="purpur", api_url=modrinth.url)
+    assert release == BridgeRelease(
+        version_id="new", version_number="5-alpha.2", version_type="alpha", loader="purpur",
+        loaders=("paper", "purpur", "folia"), game_versions=("26.3",), filename="HungerBridge-paper-26.3.jar",
+        url="https://cdn.modrinth.com/new/HungerBridge-paper-26.3.jar", size=123, sha512="ff" * 64,
+        date_published="2026-12-02T00:00:00Z")
+    assert release.directory == "/plugins"
+    query = modrinth.requests[1].path
+    assert "loaders=%5B%22purpur%22%5D" in query and "game_versions=%5B%2226.3%22%5D" in query
+    assert modrinth.requests[0].headers["User-Agent"].startswith("hungerbridge-py/")
 
 
-def test_errors(github):
-    with pytest.raises(HungerBridgeNotFound, match="Available: 1.21.11, 26.2"):
-        find_release("1.20.4", "paper", api_url=github)
-    with pytest.raises(HungerBridgeNotFound, match="not found"):
-        find_release("26.2", "paper", "v0", api_url=github)
-    with pytest.raises(ValueError, match="loader"):
-        find_release("26.2", "forge", api_url=github)
+def test_only_listed_releases_of_the_compatible_major(modrinth):
+    numbers = [r.version_number for r in listReleases("26.3", "paper", api_url=modrinth.url)]
+    assert numbers == ["5-alpha.2", "5-alpha.1"]
+
+
+def test_pinned_version(modrinth):
+    assert findRelease("26.3", "paper", version="5-alpha.1", api_url=modrinth.url).version_id == "old"
+    with pytest.raises(HungerBridgeNotFound, match="version 4-alpha.97"):
+        findRelease("26.3", "paper", version="4-alpha.97", api_url=modrinth.url)
+
+
+def test_validation_uses_project_metadata(modrinth):
+    with pytest.raises(ValueError, match="Loaders on Modrinth: fabric, folia, paper, purpur, quilt"):
+        findRelease("26.3", "forge", api_url=modrinth.url)
+    with pytest.raises(ValueError, match="Versions on Modrinth: 1.21.11, 26.1.2, 26.2, 26.3"):
+        findRelease("1.20.4", "paper", api_url=modrinth.url)
+    for missing in ({"minecraft_version": "", "loader": "paper"}, {"minecraft_version": "26.3", "loader": None}):
+        with pytest.raises(ValueError, match="required"):
+            findRelease(api_url=modrinth.url, **missing)
+
+
+def test_no_compatible_release(modrinth):
+    with pytest.raises(HungerBridgeNotFound, match="HungerBridge 5.x"):
+        findRelease("1.21.11", "fabric", api_url=modrinth.url)
+
+
+def test_mod_loaders_install_into_mods():
+    release = BridgeRelease("i", "5-alpha.1", "alpha", "fabric", ("fabric",), ("26.3",), "f.jar", "u", 1, "s", "d")
+    assert release.directory == "/mods"
+
+
+@pytest.mark.modrinth
+@pytest.mark.skipif(os.environ.get("HB_MODRINTH") != "1", reason="set HB_MODRINTH=1 to query the real Modrinth API")
+def test_real_modrinth_project_metadata():
+    from hungerbridge.releases import getProject
+
+    project = getProject()
+    assert project["slug"] == "hungerbridge"
+    assert {"paper", "fabric"} <= set(project["loaders"])

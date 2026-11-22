@@ -8,12 +8,12 @@ build-backend = "setuptools.build_meta"
 # been `hungerbridge`, so the distribution now uses the same name.
 name = "hungerbridge"
 version = "0.0.0"  # injected from version.yaml by .github/workflows/release.yml
-description = "Python client for the HungerBridge Minecraft (Paper/Folia/Fabric) HTTP bridge"
+description = "Python client for HungerBridge, the HTTP bridge inside Paper, Purpur, Folia and Fabric Minecraft servers (protocol v2)"
 readme = "README.md"
 requires-python = ">=3.9"
 license = { text = "MIT" }
 authors = [{ name = "iFamished" }]
-keywords = ["minecraft", "paper", "folia", "fabric", "automation", "server-management", "hungernet"]
+keywords = ["minecraft", "paper", "purpur", "folia", "fabric", "modrinth", "automation", "server-management", "hungernet"]
 dependencies = ["requests>=2.28"]
 classifiers = [
     "Programming Language :: Python :: 3",
@@ -39,7 +39,7 @@ test = ["pytest>=7"]
 Homepage = "https://github.com/HungerNet/HungerBridgePy"
 Source = "https://github.com/HungerNet/HungerBridgePy"
 Issues = "https://github.com/HungerNet/HungerBridgePy/issues"
-"Server plugin" = "https://github.com/HungerNet/HungerBridge"
+"Server plugin" = "https://modrinth.com/project/hungerbridge"
 
 [tool.setuptools.packages.find]
 where = ["src"]
@@ -49,4 +49,8 @@ hungerbridge = ["py.typed"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-markers = ["live: requires a running HungerBridge server (HB_URL + HB_TOKEN or HB_PICKUP_URL)"]
+markers = [
+    "live: requires a running HungerBridge server (HB_PICKUP_URL, or HB_URL + HB_TOKEN_ID + HB_TOKEN_SECRET)",
+    "modrinth: queries the real Modrinth API (network)",
+]
+addopts = "-m \"not live and not modrinth\""

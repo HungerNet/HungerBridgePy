@@ -1,15 +1,5 @@
 run: true
-version: '1.0-dev.7'
+version: '5-dev.1'
 description: |
   Dev 1:
-  - Initial release
-  Dev 2:
-  - Restructure
-  Dev 3:
-  - Fix build 
-  Dev 4:
-  - Used single quotes
-  Dev 5:
-  - Rewrite
-  Dev 6-7:
-  - Bump version
+  - Matched version with HungerBridge

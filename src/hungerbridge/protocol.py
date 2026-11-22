@@ -1,20 +1,15 @@
-"""Wire-protocol constants shared with the HungerBridge server."""
+"""Wire-protocol constants shared with the HungerBridge server (the source of truth)."""
 
 from __future__ import annotations
 
-__all__ = ["PROTOCOL_VERSION", "PROTOCOL_HEADER", "SSE_HISTORY_END", "SSE_KEEPALIVE", "MAX_HISTORY"]
+__all__ = ["PROTOCOL_VERSION", "PROTOCOL_HEADER", "BRIDGE_MAJOR"]
 
-#: Protocol major version implemented by this client. The server advertises
-#: its version in the ``X-HungerBridge-Protocol`` response header and in
-#: ``/server/meta`` (``protocol_version``). Servers that predate versioning
-#: send neither and are treated as version 1.
-PROTOCOL_VERSION = 1
+#: Protocol version implemented by this client. The server advertises its version in the
+#: ``X-HungerBridge-Protocol`` header of every response; any other version is rejected with
+#: :class:`~hungerbridge.HungerBridgeProtocolError`.
+PROTOCOL_VERSION = 2
 PROTOCOL_HEADER = "X-HungerBridge-Protocol"
 
-#: SSE comment sent by the server right after the requested history has been
-#: written (also sent when no history was requested). Older clients ignore it.
-SSE_HISTORY_END = "history-end"
-#: SSE comment sent every 15 seconds by the server to keep the stream alive.
-SSE_KEEPALIVE = "keepalive"
-#: Most history lines the server replays for ``GET /server/stream?history=N``.
-MAX_HISTORY = 200
+#: HungerBridge's major version changes exactly when the protocol changes: releases of
+#: HungerBridge 5.x speak protocol 2. Release resolution only offers such releases.
+BRIDGE_MAJOR = 5

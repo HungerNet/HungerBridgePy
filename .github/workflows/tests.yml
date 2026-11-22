@@ -11,7 +11,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python-version: ["3.11", "3.14"]
+        python-version: ["3.9", "3.12", "3.14"]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -37,7 +37,9 @@ jobs:
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: '25'
+          java-version: |
+            21
+            25
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
@@ -47,7 +49,7 @@ jobs:
         working-directory: HungerBridge
         run: |
           sed -i 's/\r$//' gradlew
-          bash ./gradlew :common:standaloneBridge --no-daemon -Phb.standalone.port=19130 > ../bridge.log 2>&1 &
+          bash ./gradlew :common:standaloneBridge --no-daemon -Porg.gradle.java.installations.fromEnv=JAVA_HOME_21_X64,JAVA_HOME_25_X64 -Phb.standalone.port=19130 > ../bridge.log 2>&1 &
           for i in $(seq 1 180); do grep -q '^PICKUP_URL=' ../bridge.log && break; sleep 1; done
           grep '^PICKUP_URL=' ../bridge.log | head -1 | cut -d= -f2- > ../pickup.txt
           test -s ../pickup.txt || (cat ../bridge.log; exit 1)
@@ -56,3 +58,15 @@ jobs:
       - name: Bridge log
         if: always()
         run: cat bridge.log || true
+
+  modrinth:
+    # Release resolution against the real Modrinth API (network; informational).
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install -e ".[test]"
+      - run: HB_MODRINTH=1 pytest -q -m modrinth tests/test_releases.py

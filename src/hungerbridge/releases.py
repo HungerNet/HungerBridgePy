@@ -1,184 +1,184 @@
-"""Find HungerBridge release jars on GitHub.
+"""Find HungerBridge releases on Modrinth, the only release source.
 
-HungerBridge publishes one jar per Minecraft version and loader. Release assets are
-named ``HungerBridge-<loader>-<minecraft>-<version>.jar`` (for example
-``HungerBridge-paper-26.2-4-alpha.94.jar``). Releases built before that naming used the
-Gradle project name, ``<minecraft>-<loader>-<version>.jar`` (``26.2-paper-4-alpha.93.jar``);
-both forms are understood.
+Releases are selected by Modrinth's structured metadata — the version's ``loaders`` and
+``game_versions`` — never by file names::
 
-The Paper jar runs on Paper, Purpur and Folia; the Fabric jar needs only Fabric Loader.
+    from hungerbridge import findRelease
 
-Example::
+    release = findRelease(minecraft_version="1.21.11", loader="paper")
+    print(release.version_number, release.filename, release.url, release.directory)
 
-    from hungerbridge.releases import find_release
-
-    asset = find_release("1.21.11", "paper")
-    print(asset.name, asset.url)
+Only releases whose major version is :data:`~hungerbridge.protocol.BRIDGE_MAJOR` are
+offered: they speak the protocol this client implements.
 """
 
 from __future__ import annotations
 
+import json
 import re
 from dataclasses import dataclass
-from typing import List, Optional
+from typing import List, Optional, Tuple
 
 import requests
 
 from .exceptions import HungerBridgeConnectionError, HungerBridgeError, HungerBridgeNotFound
+from .protocol import BRIDGE_MAJOR
 from .transport import DEFAULT_TIMEOUT, Timeout
 
 __all__ = [
-    "DEFAULT_REPOSITORY",
-    "GITHUB_API",
-    "LOADERS",
-    "LOADER_DIRECTORIES",
-    "ReleaseAsset",
-    "loader_for",
-    "parse_asset_name",
-    "list_release_assets",
-    "find_release",
+    "MODRINTH_API",
+    "PROJECT",
+    "PLUGIN_LOADERS",
+    "MOD_LOADERS",
+    "BridgeRelease",
+    "findRelease",
+    "listReleases",
+    "getProject",
 ]
 
-DEFAULT_REPOSITORY = "HungerNet/HungerBridge"
-GITHUB_API = "https://api.github.com"
+MODRINTH_API = "https://api.modrinth.com/v2"
+#: Modrinth project slug (https://modrinth.com/project/hungerbridge).
+PROJECT = "hungerbridge"
 
-#: Server software (as reported by e.g. the Calagopus Version Changer or ``/server/meta``)
-#: -> HungerBridge loader whose jar runs on it.
-LOADERS = {
-    "paper": "paper",
-    "purpur": "paper",
-    "folia": "paper",
-    "pufferfish": "paper",
-    "leaves": "paper",
-    "spigot": "paper",
-    "bukkit": "paper",
-    "fabric": "fabric",
-    "quilt": "fabric",
-}
+#: Loaders that load jars from ``/plugins`` and from ``/mods``.
+PLUGIN_LOADERS = frozenset({"paper", "purpur", "folia", "spigot", "bukkit"})
+MOD_LOADERS = frozenset({"fabric", "quilt", "forge", "neoforge"})
 
-#: Where each loader loads the jar from, relative to the server root.
-LOADER_DIRECTORIES = {"paper": "/plugins", "fabric": "/mods"}
+_MAJOR = re.compile(r"^\s*v?(\d+)")
 
-_MC = r"\d+\.\d+(?:\.\d+)?"
-_NEW_NAME = re.compile(rf"^hungerbridge-(?P<loader>paper|fabric)-(?P<mc>{_MC})-(?P<version>.+)\.jar$", re.IGNORECASE)
-_OLD_NAME = re.compile(rf"^(?:.*?-)?(?P<mc>{_MC})-(?P<loader>paper|fabric)-(?P<version>.+)\.jar$", re.IGNORECASE)
-_SKIP = ("-sources", "-javadoc", "-dev", "-all-dev")
+
+def _userAgent() -> str:
+    from . import __version__
+
+    return f"hungerbridge-py/{__version__} (+https://github.com/HungerNet/HungerBridgePy)"
 
 
 @dataclass(frozen=True)
-class ReleaseAsset:
-    """One downloadable HungerBridge jar."""
+class BridgeRelease:
+    """One downloadable HungerBridge jar (a Modrinth version's primary file) for one loader."""
 
-    name: str
-    url: str
+    version_id: str
+    version_number: str
+    version_type: str
     loader: str
-    minecraft_version: str
-    release: Optional[str] = None
+    loaders: Tuple[str, ...]
+    game_versions: Tuple[str, ...]
+    filename: str
+    url: str
+    size: int
+    sha512: str
+    date_published: str
 
     @property
     def directory(self) -> str:
-        """The server directory the jar belongs in (``/plugins`` or ``/mods``)."""
-        return LOADER_DIRECTORIES[self.loader]
+        """Where the jar goes on the server: ``/plugins`` or ``/mods``."""
+        return "/plugins" if self.loader in PLUGIN_LOADERS else "/mods"
 
 
-def loader_for(server_type: Optional[str]) -> Optional[str]:
-    """Return ``"paper"`` or ``"fabric"`` for a server type such as ``"PURPUR"``, else ``None``."""
-    return LOADERS.get(str(server_type or "").strip().lower())
-
-
-def _version_key(version: str):
-    return tuple(int(part) for part in version.split("."))
-
-
-def parse_asset_name(name: str):
-    """Return ``(loader, minecraft_version)`` for a release jar name, or ``None``.
-
-    Sources, javadoc and dev jars are ignored.
-    """
-    lowered = name.lower()
-    if not lowered.endswith(".jar") or any(marker in lowered for marker in _SKIP):
-        return None
-    match = _NEW_NAME.match(name) or _OLD_NAME.match(name)
-    if match is None:
-        return None
-    return match.group("loader").lower(), match.group("mc")
-
-
-def _get_release(release: str, repository: str, api_url: str, timeout: Timeout, session) -> dict:
-    path = "releases/latest" if release == "latest" else f"releases/tags/{release}"
-    url = f"{api_url.rstrip('/')}/repos/{repository}/{path}"
+def _get(path: str, params: Optional[dict], api_url: Optional[str], timeout: Timeout, session) -> object:
+    url = f"{(api_url or MODRINTH_API).rstrip('/')}/{path}"
     http = session or requests
     try:
-        response = http.get(url, headers={"Accept": "application/vnd.github+json"}, timeout=timeout)
+        response = http.get(url, params=params, headers={"User-Agent": _userAgent(), "Accept": "application/json"}, timeout=timeout)
     except requests.exceptions.RequestException as exc:
-        raise HungerBridgeConnectionError(f"Cannot reach GitHub to list HungerBridge releases: {exc}") from exc
+        raise HungerBridgeConnectionError(f"Cannot reach Modrinth ({url}): {exc}") from exc
     if response.status_code == 404:
-        raise HungerBridgeNotFound(f"HungerBridge release {release!r} not found in {repository}", status=404)
+        raise HungerBridgeNotFound(f"Modrinth has no {path}", status=404)
     if not response.ok:
-        raise HungerBridgeError(
-            f"GitHub answered HTTP {response.status_code} for HungerBridge release {release!r}",
-            status=response.status_code,
-        )
+        raise HungerBridgeError(f"Modrinth answered HTTP {response.status_code} for {path}", status=response.status_code)
     return response.json()
 
 
-def list_release_assets(
-    release: str = "latest",
-    *,
-    repository: str = DEFAULT_REPOSITORY,
-    api_url: str = GITHUB_API,
-    timeout: Timeout = DEFAULT_TIMEOUT,
-    session: Optional[requests.Session] = None,
-) -> List[ReleaseAsset]:
-    """Return every HungerBridge jar of a release (``"latest"`` or a tag such as ``"v4-alpha.93"``)."""
-    data = _get_release(release, repository, api_url, timeout, session)
-    tag = data.get("tag_name")
-    assets = []
-    for asset in data.get("assets", []):
-        parsed = parse_asset_name(asset.get("name", ""))
-        if parsed is not None:
-            loader, mc = parsed
-            assets.append(ReleaseAsset(asset["name"], asset.get("browser_download_url", ""), loader, mc, tag))
-    return assets
+def getProject(*, api_url: Optional[str] = None, timeout: Timeout = DEFAULT_TIMEOUT, session=None) -> dict:
+    """The Modrinth project metadata (``loaders``, ``game_versions``, ...)."""
+    return _get(f"project/{PROJECT}", None, api_url, timeout, session)
 
 
-def find_release(
+def _validate(value, name: str) -> str:
+    if not isinstance(value, str) or not value.strip():
+        raise ValueError(f"{name} is required, e.g. findRelease(minecraft_version='1.21.11', loader='paper')")
+    return value.strip()
+
+
+def listReleases(
     minecraft_version: str,
     loader: str,
-    release: str = "latest",
     *,
-    repository: str = DEFAULT_REPOSITORY,
-    api_url: str = GITHUB_API,
+    api_url: Optional[str] = None,
     timeout: Timeout = DEFAULT_TIMEOUT,
-    session: Optional[requests.Session] = None,
-) -> ReleaseAsset:
-    """Return the jar of ``release`` for a Minecraft version and loader.
-
-    Args:
-        minecraft_version: e.g. ``"1.21.11"``, or ``"latest"`` for the newest version
-            the release supports.
-        loader: ``"paper"`` or ``"fabric"`` (server types like ``"PURPUR"`` are accepted).
-        release: ``"latest"`` or a release tag.
+    session=None,
+) -> List[BridgeRelease]:
+    """Every listed release for ``loader`` and ``minecraft_version`` that speaks this
+    client's protocol, newest first.
 
     Raises:
-        HungerBridgeNotFound: The release, or a jar for that version and loader, does not exist.
-        HungerBridgeConnectionError: GitHub could not be reached.
+        ValueError: missing arguments, or a loader/Minecraft version the project does not
+            support (the message lists what Modrinth has).
+        HungerBridgeConnectionError: Modrinth could not be reached.
     """
-    resolved = loader_for(loader)
-    if resolved is None:
-        raise ValueError(f"loader must be 'paper' or 'fabric' (or a server type such as 'PURPUR'), got {loader!r}")
-    assets = [a for a in list_release_assets(release, repository=repository, api_url=api_url, timeout=timeout, session=session)
-              if a.loader == resolved]
-    if not assets:
-        raise HungerBridgeNotFound(f"HungerBridge release {release!r} has no {resolved} jar", status=404)
-    if minecraft_version == "latest":
-        return max(assets, key=lambda a: _version_key(a.minecraft_version))
-    for asset in assets:
-        if asset.minecraft_version == minecraft_version:
-            return asset
-    supported = ", ".join(sorted({a.minecraft_version for a in assets}, key=_version_key))
-    raise HungerBridgeNotFound(
-        f"HungerBridge {assets[0].release or release} has no {resolved} jar for Minecraft {minecraft_version}. "
-        f"Available: {supported}",
-        status=404,
-    )
+    minecraft_version = _validate(minecraft_version, "minecraft_version")
+    loader = _validate(loader, "loader").lower()
+    project = getProject(api_url=api_url, timeout=timeout, session=session)
+    loaders = sorted(project.get("loaders") or [])
+    if loader not in loaders:
+        raise ValueError(f"HungerBridge is not published for loader {loader!r}. Loaders on Modrinth: {', '.join(loaders)}")
+    if loader not in PLUGIN_LOADERS | MOD_LOADERS:
+        raise ValueError(f"Unknown install directory for loader {loader!r}")
+    game_versions = project.get("game_versions") or []
+    if minecraft_version not in game_versions:
+        raise ValueError(f"HungerBridge is not published for Minecraft {minecraft_version}. "
+                         f"Versions on Modrinth: {', '.join(game_versions)}")
+    versions = _get(f"project/{PROJECT}/version",
+                    {"loaders": json.dumps([loader]), "game_versions": json.dumps([minecraft_version])},
+                    api_url, timeout, session)
+    releases = []
+    for v in versions or []:
+        match = _MAJOR.match(str(v.get("version_number", "")))
+        if v.get("status", "listed") != "listed" or match is None or int(match.group(1)) != BRIDGE_MAJOR:
+            continue
+        files = v.get("files") or []
+        primary = next((f for f in files if f.get("primary")), files[0] if files else None)
+        if primary is None:
+            continue
+        releases.append(BridgeRelease(
+            version_id=v["id"],
+            version_number=v["version_number"],
+            version_type=v.get("version_type", "release"),
+            loader=loader,
+            loaders=tuple(v.get("loaders") or ()),
+            game_versions=tuple(v.get("game_versions") or ()),
+            filename=primary["filename"],
+            url=primary["url"],
+            size=int(primary.get("size") or 0),
+            sha512=(primary.get("hashes") or {}).get("sha512", ""),
+            date_published=v.get("date_published", ""),
+        ))
+    releases.sort(key=lambda r: r.date_published, reverse=True)
+    return releases
+
+
+def findRelease(
+    minecraft_version: str,
+    loader: str,
+    *,
+    version: Optional[str] = None,
+    api_url: Optional[str] = None,
+    timeout: Timeout = DEFAULT_TIMEOUT,
+    session=None,
+) -> BridgeRelease:
+    """The newest compatible release for ``loader`` and ``minecraft_version``, or the
+    release with Modrinth version number ``version``.
+
+    Raises:
+        ValueError: see :func:`listReleases`.
+        HungerBridgeNotFound: no compatible (or no matching ``version``) release exists.
+        HungerBridgeConnectionError: Modrinth could not be reached.
+    """
+    releases = listReleases(minecraft_version, loader, api_url=api_url, timeout=timeout, session=session)
+    if version is not None:
+        releases = [r for r in releases if r.version_number == version]
+    if not releases:
+        wanted = f"version {version}" if version else f"a HungerBridge {BRIDGE_MAJOR}.x release"
+        raise HungerBridgeNotFound(f"Modrinth has no {wanted} for {loader} on Minecraft {minecraft_version} "
+                                   f"(this client speaks the protocol of HungerBridge {BRIDGE_MAJOR}.x)", status=404)
+    return releases[0]

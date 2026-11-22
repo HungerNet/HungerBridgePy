@@ -1,51 +1,45 @@
-"""Python client for the HungerBridge Minecraft HTTP bridge."""
+"""Python client for HungerBridge, the HTTP bridge inside Paper, Purpur, Folia and Fabric servers."""
 
 from __future__ import annotations
 
-from .auth import Credentials
-from .client import BridgeClient, redeem_pickup
-from .exceptions import (
+from importlib.metadata import PackageNotFoundError, version as _distVersion
+
+try:
+    __version__ = _distVersion("hungerbridge")
+except PackageNotFoundError:  # running from a checkout
+    __version__ = "0.0.0"
+
+from .auth import Credentials  # noqa: E402
+from .client import BridgeClient, redeemPickup  # noqa: E402
+from .exceptions import (  # noqa: E402
     HungerBridgeAuthError,
     HungerBridgeConnectionError,
     HungerBridgeError,
     HungerBridgeForbidden,
     HungerBridgeNotFound,
+    HungerBridgeProtocolError,
     HungerBridgeRateLimit,
-    InvalidModeError,
 )
-from .protocol import MAX_HISTORY, PROTOCOL_VERSION
-from .releases import ReleaseAsset, find_release
-from .stream import Stream
-
-try:  # installed distribution
-    from importlib.metadata import PackageNotFoundError, version as _dist_version
-
-    try:
-        __version__ = _dist_version("hungerbridge")
-    except PackageNotFoundError:
-        __version__ = "0.0.0"
-except ImportError:  # pragma: no cover
-    __version__ = "0.0.0"
-
-#: Alias kept for the name the original ``__init__`` tried to export.
-HungerBridge = BridgeClient
+from .protocol import BRIDGE_MAJOR, PROTOCOL_VERSION  # noqa: E402
+from .releases import BridgeRelease, findRelease  # noqa: E402
+from .stream import LogEvent, Stream  # noqa: E402
 
 __all__ = [
     "BridgeClient",
-    "HungerBridge",
-    "Stream",
     "Credentials",
-    "redeem_pickup",
-    "find_release",
-    "ReleaseAsset",
+    "redeemPickup",
+    "Stream",
+    "LogEvent",
+    "findRelease",
+    "BridgeRelease",
     "PROTOCOL_VERSION",
-    "MAX_HISTORY",
+    "BRIDGE_MAJOR",
     "HungerBridgeError",
     "HungerBridgeRateLimit",
     "HungerBridgeAuthError",
     "HungerBridgeForbidden",
     "HungerBridgeNotFound",
     "HungerBridgeConnectionError",
-    "InvalidModeError",
+    "HungerBridgeProtocolError",
     "__version__",
 ]

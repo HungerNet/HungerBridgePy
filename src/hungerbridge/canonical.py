@@ -4,7 +4,7 @@ Everything in this module is part of the wire protocol: the output must match
 ``com.hungerbridge.common.security.TokenManager`` (``canonicalizeJson`` and
 ``normalizePath``) byte for byte, otherwise HMAC signatures will not verify.
 
-Rules (protocol v1):
+Rules (unchanged in protocol v2):
 
 * Objects: keys sorted by UTF-16 code unit order (Java ``TreeMap<String>``),
   no whitespace, ``key:value`` pairs joined with ``,``.
@@ -26,7 +26,7 @@ import math
 from typing import Any
 from urllib.parse import urlparse
 
-__all__ = ["canonical_json", "canonical_body", "normalize_path", "quote_string"]
+__all__ = ["canonicalJson", "canonicalBody", "normalizePath", "quoteString"]
 
 _SIMPLE_ESCAPES = {
     '"': '\\"',
@@ -39,7 +39,7 @@ _SIMPLE_ESCAPES = {
 }
 
 
-def quote_string(value: str | None) -> str:
+def quoteString(value: str | None) -> str:
     """Quote ``value`` as an ASCII-only JSON string literal (Java-compatible)."""
     if value is None:
         return '""'
@@ -62,18 +62,17 @@ def quote_string(value: str | None) -> str:
     return "".join(out)
 
 
-def _utf16_sort_key(key: str) -> bytes:
+def _utf16SortKey(key: str) -> bytes:
     # Java's TreeMap<String> orders by UTF-16 code units; Python orders by code
     # points. They differ only when non-BMP characters are compared with
     # characters in U+E000..U+FFFF. Encoding as UTF-16-BE gives Java's order.
     return key.encode("utf-16-be", "surrogatepass")
 
 
-def canonical_json(value: Any) -> str:
+def canonicalJson(value: Any) -> str:
     """Return the canonical JSON encoding of ``value``.
 
-    ``None`` encodes as ``null``. Unknown objects are encoded as their ``str()``
-    (quoted), matching the historical client behavior.
+    ``None`` encodes as ``null``; any other object is encoded as its quoted ``str()``.
     """
     if value is None:
         return "null"
@@ -86,23 +85,23 @@ def canonical_json(value: Any) -> str:
             raise ValueError("NaN and infinite floats cannot be encoded as JSON")
         return json.dumps(value)
     if isinstance(value, str):
-        return quote_string(value)
+        return quoteString(value)
     if isinstance(value, (list, tuple)):
-        return "[" + ",".join(canonical_json(v) for v in value) + "]"
+        return "[" + ",".join(canonicalJson(v) for v in value) + "]"
     if isinstance(value, dict):
-        items = sorted(((str(k), v) for k, v in value.items()), key=lambda kv: _utf16_sort_key(kv[0]))
-        return "{" + ",".join(quote_string(k) + ":" + canonical_json(v) for k, v in items) + "}"
-    return quote_string(str(value))
+        items = sorted(((str(k), v) for k, v in value.items()), key=lambda kv: _utf16SortKey(kv[0]))
+        return "{" + ",".join(quoteString(k) + ":" + canonicalJson(v) for k, v in items) + "}"
+    return quoteString(str(value))
 
 
-def canonical_body(payload: Any) -> str:
+def canonicalBody(payload: Any) -> str:
     """Canonical request body: empty string when there is no payload."""
     if payload is None:
         return ""
-    return canonical_json(payload)
+    return canonicalJson(payload)
 
 
-def normalize_path(path: str | None) -> str:
+def normalizePath(path: str | None) -> str:
     """Normalize a request path exactly like ``TokenManager.normalizePath``."""
     if not path:
         return "/"

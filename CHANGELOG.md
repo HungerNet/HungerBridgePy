@@ -1,5 +1,35 @@
 # Changelog
 
+## 2.0-dev.1 (protocol v2, HungerBridge 5.x)
+
+Breaking release; every change is in [MIGRATING.md](MIGRATING.md).
+
+### Changed
+* Credentials: `BridgeClient(url, *, token_id, token_secret)` only; the `"id:secret"` format,
+  `Credentials.parse()` and the non-hex secret fallback are removed; secrets are validated.
+* `runCommand(command, show_console=False)` returns the output text; with HungerBridge 5 the
+  output stays off the server console unless `show_console=True`. 504 → `command_timeout`.
+* `log(message, level, thread, logger, normalize)` with logger names and server-side
+  normalization; returns the logged text.
+* Streaming: `LogEvent` objects (structured fields + the canonical `line`), exact resume with
+  `Last-Event-ID`, gap and restart detection, back-off with jitter, `reconnect=True` by default.
+* Releases: Modrinth only (`findRelease`, `BridgeRelease`), selected by loader and game-version
+  metadata, limited to HungerBridge 5.x.
+* A server with another protocol version raises `HungerBridgeProtocolError`.
+* camelCase function names; snake_case parameters (`show_console`, `retry_backoff`, `min_interval`).
+
+### Fixed
+* A literal backslash-n in a log line was turned into a line break.
+* Reconnecting dropped or duplicated repeated identical lines.
+* Default stream handlers kept every line in memory forever.
+* `Stream.connect()` from two threads could start two workers.
+* The throttle used the wall clock.
+
+### Removed
+* `swallow_rate_limit`, `silent`, `normalize` (runCommand), `level=None`, `client.stream`,
+  `Stream.sanitize`/`extractTimestamp`/`getRaw`/..., `MAX_HISTORY`, `InvalidModeError`,
+  `hungerbridge.bridge`, the `HungerBridge` alias, `units.convert`, GitHub release discovery.
+
 ## 1.0-dev.2 (2026-11)
 
 ### Added
