@@ -16,20 +16,19 @@ jobs:
   release:
     needs: tests
     runs-on: ubuntu-latest
-    if: ${{ !contains(githu
-
-      - name: Install yq
-        run: |
-          curl -sL https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64 \
-            -o /usr/local/bin/yq
-          chmod +x /usr/local/bin/yqb.event.head_commit.message, 'Merge pull request') }}
+    if: ${{ !contains(github.event.head_commit.message, 'Merge pull request') }}
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Install yq
+        run: |
+          curl -sL https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64 \
+            -o /usr/local/bin/yq
+          chmod +x /usr/local/bin/yq
+
       - name: Parse version.yaml
-        id: version
         run: |
           echo "RUN=$(yq '.run' version.yaml)" >> $GITHUB_ENV
           echo "VERSION=$(yq '.version' version.yaml)" >> $GITHUB_ENV
@@ -39,9 +38,9 @@ jobs:
 
       - name: Stop if run=false
         if: ${{ env.RUN == 'false' }}
-        run: echo "run=false → skipping release."
+        run: echo "run=false -> skipping release."
 
-      - name: Set up Python 3.11
+      - name: Set up Python
         if: ${{ env.RUN == 'true' }}
         uses: actions/setup-python@v5
         with:
@@ -61,15 +60,18 @@ jobs:
       - name: Inject version into pyproject.toml
         if: ${{ env.RUN == 'true' }}
         run: |
-          python - << 'EOF'
-          import tomli, tomli_w
-          import os
+          python - <<'EOF'
+          import tomli, tomli_w, os
 
           version = os.environ["VERSION"]
 
-          d = tomli.load(open('pyproject.toml','rb'))
-          d['project']['version'] = version
-          open('pyproject.toml','wb').write(tomli_w.dumps(d).encode())
+          with open("pyproject.toml", "rb") as f:
+              d = tomli.load(f)
+
+          d["project"]["version"] = version
+
+          with open("pyproject.toml", "wb") as f:
+              f.write(tomli_w.dumps(d).encode())
           EOF
 
       - name: Build package
